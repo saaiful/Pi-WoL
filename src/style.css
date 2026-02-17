@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme {
+  --color-border: hsl(240 3.7% 15.9%);
+  --color-input: hsl(240 3.7% 15.9%);
+  --color-ring: hsl(240 4.9% 83.9%);
+  --color-background: hsl(240 10% 3.9%);
+  --color-foreground: hsl(0 0% 98%);
+
+  --color-primary: hsl(0 0% 98%);
+  --color-primary-foreground: hsl(240 5.9% 10%);
+
+  --color-secondary: hsl(240 3.7% 15.9%);
+  --color-secondary-foreground: hsl(0 0% 98%);
+
+  --color-destructive: hsl(0 62.8% 30.6%);
+  --color-destructive-foreground: hsl(0 0% 98%);
+
+  --color-muted: hsl(240 3.7% 15.9%);
+  --color-muted-foreground: hsl(240 5% 64.9%);
+
+  --color-accent: hsl(240 3.7% 15.9%);
+  --color-accent-foreground: hsl(0 0% 98%);
+
+  --color-card: hsl(240 10% 3.9%);
+  --color-card-foreground: hsl(0 0% 98%);
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* ── Base ──────────────────────────────────────────── */
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* ── Components ────────────────────────────────────── */
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium
+           transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring
+           disabled:pointer-events-none disabled:opacity-50 h-9 px-4 py-2 cursor-pointer;
+  }
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90;
+  }
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80;
+  }
+  .btn-destructive {
+    @apply bg-destructive text-destructive-foreground hover:bg-destructive/90;
+  }
+  .btn-outline {
+    @apply border border-border bg-transparent hover:bg-accent hover:text-accent-foreground;
+  }
+  .btn-ghost {
+    @apply hover:bg-accent hover:text-accent-foreground;
+  }
+  .btn-icon {
+    @apply h-9 w-9 p-0;
+  }
+  .btn-icon-sm {
+    @apply h-8 w-8 p-0;
+  }
+  .btn-sm {
+    @apply h-8 px-3 text-xs;
+  }
+
+  .input {
+    @apply flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm
+           text-foreground shadow-sm transition-colors placeholder:text-muted-foreground
+           focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring;
+  }
+
+  .label {
+    @apply text-sm font-medium leading-none text-foreground;
+  }
+
+  .card {
+    @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full border border-transparent px-2.5 py-0.5
+           text-xs font-semibold transition-colors;
+  }
+  .badge-success {
+    @apply bg-emerald-500/15 text-emerald-400 border-emerald-500/20;
+  }
+  .badge-danger {
+    @apply bg-red-500/15 text-red-400 border-red-500/20;
+  }
+}
