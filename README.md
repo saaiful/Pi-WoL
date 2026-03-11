@@ -84,6 +84,27 @@ sudo systemctl stop pi-wol
 sudo bash uninstall.sh
 ```
 
+### Updating to a New Version
+
+> [!IMPORTANT]
+> Always uninstall the old version before installing the new one to ensure a clean upgrade.
+
+```bash
+# 1. Pull the latest code
+cd pi-wol
+git pull
+
+# 2. Rebuild the frontend
+npm install
+npm run build
+
+# 3. Remove the old installation (your devices.json will be backed up)
+sudo bash uninstall.sh
+
+# 4. Install the new version
+sudo bash install.sh
+```
+
 ---
 
 ## Development

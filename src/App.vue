@@ -29,8 +29,18 @@
                        :class="{'opacity-50 cursor-not-allowed': !!editingDevice}" />
               </div>
               <div>
-                <label class="label mb-1.5 block">Last Known IP <span class="text-muted-foreground font-normal">(optional)</span></label>
-                <input v-model="formDevice.last_ip" class="input font-mono" placeholder="192.168.1.105" />
+                <label class="label mb-1.5 block">IP Addresses <span class="text-muted-foreground font-normal">(optional)</span></label>
+                <div v-for="(ip, idx) in formDevice.ips" :key="idx" class="flex gap-2 mb-2">
+                  <input v-model="formDevice.ips[idx]" class="input font-mono flex-1" placeholder="192.168.1.105" />
+                  <button type="button" class="btn btn-icon btn-sm bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/30 disabled:opacity-30 disabled:cursor-not-allowed" @click="removeIp(idx)"
+                          :disabled="formDevice.ips.length === 1" title="Remove IP">
+                    <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                  </button>
+                </div>
+                <button type="button" class="btn btn-outline btn-sm mt-1" @click="addIp">
+                  <svg class="h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  Add IP
+                </button>
               </div>
               <div class="flex justify-end gap-2 pt-2">
                 <button type="button" class="btn btn-outline" @click="closeDeviceModal">Cancel</button>
@@ -111,7 +121,10 @@
                   class="border-b border-border last:border-0 transition-colors hover:bg-muted/50">
                 <td class="px-6 py-3 text-sm font-medium">{{ dev.name }}</td>
                 <td class="px-6 py-3 text-sm font-mono text-muted-foreground">{{ dev.mac }}</td>
-                <td class="px-6 py-3 text-sm font-mono text-muted-foreground">{{ dev.last_ip || '—' }}</td>
+                <td class="px-6 py-3 text-sm font-mono text-muted-foreground">
+                  <span v-if="dev.ips && dev.ips.length">{{ dev.ips.join(', ') }}</span>
+                  <span v-else>—</span>
+                </td>
                 <td class="px-6 py-3">
                   <span :class="dev.online ? 'badge-success' : 'badge-danger'" class="badge">
                     <span class="mr-1 h-1.5 w-1.5 rounded-full" :class="dev.online ? 'bg-emerald-400' : 'bg-red-400'"></span>
@@ -149,8 +162,8 @@
                 {{ dev.online ? 'Online' : 'Offline' }}
               </span>
             </div>
-            <div v-if="dev.last_ip" class="text-xs text-muted-foreground">
-              IP: <span class="font-mono">{{ dev.last_ip }}</span>
+            <div v-if="dev.ips && dev.ips.length" class="text-xs text-muted-foreground">
+              IPs: <span class="font-mono">{{ dev.ips.join(', ') }}</span>
             </div>
             <div class="flex gap-2">
               <button class="btn btn-outline btn-sm flex-1" @click="wake(dev.mac)" :disabled="loading">
@@ -184,8 +197,24 @@
       </Transition>
 
       <!-- Footer -->
-      <footer class="mt-8 text-center text-xs text-muted-foreground py-4 border-t border-border">
-        &copy; <sytong>Stupid WOL</sytong> for Mango People
+      <footer class="mt-8 py-4 border-t border-border">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>&copy; <sytong>Stupid WOL</sytong> for Mango People</span>
+          <div class="flex items-center gap-2">
+            <!-- Ping indicator -->
+            <span class="flex items-center gap-1.5">
+              <span class="relative flex h-2 w-2">
+                <span v-if="pinging" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                <span class="relative inline-flex h-2 w-2 rounded-full"
+                      :class="pinging ? 'bg-sky-400' : 'bg-emerald-400'"></span>
+              </span>
+              {{ pinging ? 'Checking…' : 'Idle' }}
+            </span>
+            <span class="text-muted-foreground/40">·</span>
+            <span v-if="lastChecked">Last check: {{ lastChecked }}</span>
+            <span v-else class="text-muted-foreground/60">Not checked yet</span>
+          </div>
+        </div>
       </footer>
 
     </div>
@@ -197,7 +226,7 @@ export default {
   data() {
     return {
       devices: [],
-      formDevice: { name: '', mac: '', last_ip: '' },
+      formDevice: { name: '', mac: '', ips: [''] },
       editingDevice: null,
       deleteTarget: null,
       loading: false,
@@ -207,7 +236,9 @@ export default {
       toastMessage: '',
       toastType: 'success',
       toastTimer: null,
-      pollInterval: null
+      pollInterval: null,
+      pinging: false,
+      lastChecked: null
     }
   },
   mounted() {
@@ -220,34 +251,41 @@ export default {
   methods: {
     async refreshStatus() {
       if (this.loading) return;
+      this.pinging = true;
       try {
         const res = await fetch('/api/devices');
         if (!res.ok) return;
         this.devices = await res.json();
-      } catch { /* ignore polling errors */ }
+        this.lastChecked = new Date().toLocaleTimeString();
+      } catch { /* ignore polling errors */ } finally {
+        this.pinging = false;
+      }
     },
     async fetchDevices() {
       this.loading = true;
+      this.pinging = true;
       try {
         const res = await fetch('/api/devices');
         if (!res.ok) throw new Error('Failed to load devices');
         this.devices = await res.json();
+        this.lastChecked = new Date().toLocaleTimeString();
       } catch (err) {
         this.showToast(err.message, 'danger');
       } finally {
         this.loading = false;
+        this.pinging = false;
       }
     },
 
     openAddModal() {
       this.editingDevice = null;
-      this.formDevice = { name: '', mac: '', last_ip: '' };
+      this.formDevice = { name: '', mac: '', ips: [''] };
       this.showDeviceModal = true;
     },
 
     openEditModal(dev) {
       this.editingDevice = dev.mac;
-      this.formDevice = { name: dev.name, mac: dev.mac, last_ip: dev.last_ip || '' };
+      this.formDevice = { name: dev.name, mac: dev.mac, ips: dev.ips && dev.ips.length ? [...dev.ips] : [''] };
       this.showDeviceModal = true;
     },
 
@@ -260,11 +298,16 @@ export default {
       if (!this.formDevice.mac.trim()) return;
       this.loading = true;
       try {
+        const payload = {
+          name: this.formDevice.name,
+          mac: this.formDevice.mac,
+          ips: this.formDevice.ips.map(ip => ip.trim()).filter(ip => ip)
+        };
         if (this.editingDevice) {
           const res = await fetch(`/api/devices/${encodeURIComponent(this.editingDevice)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(this.formDevice)
+            body: JSON.stringify(payload)
           });
           if (!res.ok) {
             const err = await res.json();
@@ -275,14 +318,14 @@ export default {
           const res = await fetch('/api/devices', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(this.formDevice)
+            body: JSON.stringify(payload)
           });
           if (!res.ok) {
             const err = await res.json();
             throw new Error(err.error || 'Failed to add');
           }
           const result = await res.json();
-          const ipMsg = result.last_ip ? ` (IP: ${result.last_ip})` : '';
+          const ipMsg = result.ips && result.ips.length ? ` (IPs: ${result.ips.join(', ')})` : '';
           this.showToast('Device added' + ipMsg, 'success');
         }
         this.closeDeviceModal();
@@ -341,6 +384,15 @@ export default {
       } finally {
         this.loading = false;
       }
+    },
+
+    addIp() {
+      this.formDevice.ips.push('');
+    },
+
+    removeIp(idx) {
+      this.formDevice.ips.splice(idx, 1);
+      if (!this.formDevice.ips.length) this.formDevice.ips.push('');
     },
 
     showToast(message, type = 'success') {

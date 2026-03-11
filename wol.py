@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import re
 import socket
@@ -45,6 +46,24 @@ def validate_ip(ip):
     return ip, None
 
 
+def validate_ips(ips):
+    """Validate a list of IPv4 addresses. Returns (clean_ips, error)."""
+    if ips is None:
+        return [], None
+    if not isinstance(ips, list):
+        return None, 'IPs must be a list'
+    if len(ips) > 10:
+        return None, 'Too many IP addresses (max 10)'
+    clean = []
+    for ip in ips:
+        cleaned, err = validate_ip(ip)
+        if err:
+            return None, err
+        if cleaned:
+            clean.append(cleaned)
+    return clean, None
+
+
 def validate_name(name, default='Unnamed'):
     """Sanitize device name. Returns cleaned name."""
     if not name or not isinstance(name, str):
@@ -58,7 +77,17 @@ def validate_name(name, default='Unnamed'):
 def load_devices():
     if os.path.exists(DEVICES_FILE):
         with open(DEVICES_FILE, 'r') as f:
-            return json.load(f)
+            devices = json.load(f)
+        # Migrate old single-IP format to multi-IP list
+        migrated = False
+        for d in devices:
+            if 'ips' not in d:
+                old_ip = d.pop('last_ip', '')
+                d['ips'] = [old_ip] if old_ip else []
+                migrated = True
+        if migrated:
+            save_devices(devices)
+        return devices
     return []
 
 def save_devices(devices):
@@ -114,13 +143,26 @@ def ping(ip):
     except:
         return False
 
+
+def ping_any(ips):
+    """Return True if any IP in the list responds to ping (checked in parallel)."""
+    active_ips = [ip for ip in ips if ip]
+    if not active_ips:
+        return False
+    with ThreadPoolExecutor(max_workers=len(active_ips)) as ex:
+        futures = {ex.submit(ping, ip): ip for ip in active_ips}
+        for future in as_completed(futures):
+            if future.result():
+                return True
+    return False
+
 # ── API Endpoints ───────────────────────────────────────────────
 
 @app.route('/api/devices', methods=['GET'])
 def get_devices():
     devices = load_devices()
     for d in devices:
-        d['online'] = ping(d.get('last_ip'))
+        d['online'] = ping_any(d.get('ips', []))
     return jsonify(devices)
 
 @app.route('/api/devices', methods=['POST'])
@@ -133,9 +175,16 @@ def add_device():
     if mac_err:
         return jsonify({"error": mac_err}), 400
 
-    last_ip, ip_err = validate_ip(data.get('last_ip', ''))
-    if ip_err:
-        return jsonify({"error": ip_err}), 400
+    # Accept 'ips' list or fall back to legacy 'last_ip' string
+    ips, ips_err = validate_ips(data.get('ips', None))
+    if ips_err:
+        return jsonify({"error": ips_err}), 400
+    if not ips and data.get('last_ip'):
+        single_ip, ip_err = validate_ip(data['last_ip'])
+        if ip_err:
+            return jsonify({"error": ip_err}), 400
+        if single_ip:
+            ips = [single_ip]
 
     name = validate_name(data.get('name', ''), default='Device')
 
@@ -144,15 +193,15 @@ def add_device():
     if any(d['mac'] == mac for d in devices):
         return jsonify({"error": f"Device with MAC {mac} already exists"}), 409
 
-    # Auto-resolve IP from ARP table if not provided
-    if not last_ip:
+    # Auto-resolve IP from ARP table if none provided
+    if not ips:
         resolved = resolve_ip_from_mac(mac)
         if resolved:
-            last_ip = resolved
+            ips = [resolved]
 
-    devices.append({"name": name, "mac": mac, "last_ip": last_ip})
+    devices.append({"name": name, "mac": mac, "ips": ips})
     save_devices(devices)
-    return jsonify({"message": "Device added", "mac": mac, "last_ip": last_ip}), 201
+    return jsonify({"message": "Device added", "mac": mac, "ips": ips}), 201
 
 @app.route('/api/devices/<mac>', methods=['PUT'])
 def update_device(mac):
@@ -181,12 +230,17 @@ def update_device(mac):
                     return jsonify({"error": f"Device with MAC {new_mac} already exists"}), 409
                 d['mac'] = new_mac
 
-            # Validate optional new IP
-            if 'last_ip' in data:
-                new_ip, ip_err = validate_ip(data['last_ip'])
+            # Validate optional new IPs list (also accept legacy last_ip string)
+            if 'ips' in data:
+                new_ips, ips_err = validate_ips(data['ips'])
+                if ips_err:
+                    return jsonify({"error": ips_err}), 400
+                d['ips'] = new_ips
+            elif 'last_ip' in data:
+                single_ip, ip_err = validate_ip(data['last_ip'])
                 if ip_err:
                     return jsonify({"error": ip_err}), 400
-                d['last_ip'] = new_ip
+                d['ips'] = [single_ip] if single_ip else []
 
             save_devices(devices)
             return jsonify({"message": "Device updated", "device": d})
